@@ -82,14 +82,18 @@
       box-shadow: 0 22px 50px rgba(0,0,0,0.7);
       padding: 14px;
       display: flex;
+      flex-direction: column; /* щоб кнопки були під канвасом */
       align-items: center;
       justify-content: center;
+      gap: 8px;
     }
 
     canvas {
       border-radius: 18px;
       background: #020617;
       display: block;
+      max-width: 100%;
+      height: auto;
     }
 
     .hint {
@@ -97,6 +101,51 @@
       font-size: 12px;
       color: #9ca3af;
       line-height: 1.4;
+    }
+
+    /* ---- Мобільні кнопки керування ---- */
+    .mobile-controls {
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      .wrap {
+        grid-template-columns: 1fr;
+        width: 100%;
+        height: 100vh;
+        padding: 8px;
+      }
+
+      .panel {
+        order: 2;
+      }
+
+      .canvas-wrap {
+        order: 1;
+      }
+
+      .mobile-controls {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+        max-width: 800px;
+      }
+
+      .mc-btn {
+        flex: 1;
+        padding: 10px 0;
+        border-radius: 999px;
+        border: 1px solid #1f2937;
+        background: #020617;
+        color: #e5e7eb;
+        font-size: 18px;
+        cursor: pointer;
+      }
+
+      .mc-btn:active {
+        background: #1f2937;
+      }
     }
   </style>
 </head>
@@ -128,6 +177,8 @@
       • E – тримай для прискорення<br>
       • Q – режим фантома (2 с, кулдаун)<br>
       • P – пауза<br><br>
+      На телефоні:<br>
+      ◀ ▶ – поворот, ⚡ – буст, 👻 – фантом, ⏸ – пауза<br><br>
       Яблуко: одне, просте – дає +1 очко і росте змійка.<br>
       Зі зростанням рахунку зʼявляються: червоні вороги, снайпер, міни, швидкі вороги.
     </div>
@@ -135,6 +186,13 @@
 
   <div class="canvas-wrap">
     <canvas id="game" width="800" height="560"></canvas>
+    <div class="mobile-controls">
+      <button class="mc-btn" id="btnLeft">◀</button>
+      <button class="mc-btn" id="btnRight">▶</button>
+      <button class="mc-btn" id="btnBoost">⚡</button>
+      <button class="mc-btn" id="btnGhost">👻</button>
+      <button class="mc-btn" id="btnPause">⏸</button>
+    </div>
   </div>
 </div>
 
@@ -149,7 +207,19 @@ const shieldEl = document.getElementById('shield');
 const stateEl = document.getElementById('state');
 const effectsEl = document.getElementById('effects');
 
+const btnLeft  = document.getElementById('btnLeft');
+const btnRight = document.getElementById('btnRight');
+const btnBoost = document.getElementById('btnBoost');
+const btnGhost = document.getElementById('btnGhost');
+const btnPause = document.getElementById('btnPause');
+
 const keys = {};
+const touchControls = {
+  left: false,
+  right: false,
+  boost: false
+};
+
 let game = null;
 let lastTime = 0;
 
@@ -516,7 +586,7 @@ function resetGame() {
     score: 0,
     running: false,
     gameOver: false,
-    paused: false,     // ← стан паузи
+    paused: false,
   };
 
   updateUI();
@@ -593,11 +663,11 @@ function loop(timestamp) {
 function update(dt) {
   const p = game.player;
 
-  // Керуємо по коду клавіш, а не по символу
-  if (keys['KeyA']) p.angle -= 0.06 * dt;
-  if (keys['KeyD']) p.angle += 0.06 * dt;
+  // Клавіатура + мобільні кнопки
+  if (keys['KeyA'] || touchControls.left)  p.angle -= 0.06 * dt;
+  if (keys['KeyD'] || touchControls.right) p.angle += 0.06 * dt;
 
-  const boostFactor = keys['KeyE'] ? 1.8 : 1;
+  const boostFactor = (keys['KeyE'] || touchControls.boost) ? 1.8 : 1;
   p.speed = p.baseSpeed * boostFactor;
 
   if (keys['KeyQ'] && !p.ghost && p.ghostCooldown <= 0) {
@@ -687,7 +757,7 @@ function draw(dt) {
     ctx.font = '28px system-ui';
     ctx.fillText('ПАУЗА', canvas.width / 2, canvas.height / 2 - 10);
     ctx.font = '16px system-ui';
-    ctx.fillText('Натисніть P, щоб продовжити', canvas.width / 2, canvas.height / 2 + 20);
+    ctx.fillText('Натисніть P або ⏸, щоб продовжити', canvas.width / 2, canvas.height / 2 + 20);
     return;
   }
 
@@ -846,10 +916,8 @@ window.addEventListener('keydown', (e) => {
   if (code === 'KeyP' && game && !game.gameOver) {
     game.paused = !game.paused;
     updateUI();
-    // НІЧОГО не запускаємо додатково, цикл уже крутиться
   }
 });
-
 
 window.addEventListener('keyup', (e) => {
   const code = e.code;
@@ -860,6 +928,62 @@ startBtn.addEventListener('click', startGame);
 restartBtn.addEventListener('click', () => {
   resetGame();
 });
+
+// ---- Мобільні кнопки ----
+function bindHoldButton(btn, onDown, onUp) {
+  if (!btn) return;
+  const start = (e) => {
+    e.preventDefault();
+    onDown();
+  };
+  const end = (e) => {
+    e.preventDefault();
+    onUp();
+  };
+  btn.addEventListener('touchstart', start);
+  btn.addEventListener('touchend', end);
+  btn.addEventListener('touchcancel', end);
+  btn.addEventListener('mousedown', start);
+  btn.addEventListener('mouseup', end);
+  btn.addEventListener('mouseleave', end);
+}
+
+// поворот
+bindHoldButton(btnLeft,
+  () => touchControls.left = true,
+  () => touchControls.left = false
+);
+bindHoldButton(btnRight,
+  () => touchControls.right = true,
+  () => touchControls.right = false
+);
+
+// буст
+bindHoldButton(btnBoost,
+  () => touchControls.boost = true,
+  () => touchControls.boost = false
+);
+
+// фантом (одноразово)
+if (btnGhost) {
+  btnGhost.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (game && game.player && !game.player.ghost && game.player.ghostCooldown <= 0) {
+      activateGhost();
+    }
+  });
+}
+
+// пауза (одноразово)
+if (btnPause) {
+  btnPause.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (game && !game.gameOver) {
+      game.paused = !game.paused;
+      updateUI();
+    }
+  });
+}
 
 resetGame();
 </script>
